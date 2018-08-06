@@ -1,3 +1,5 @@
 build/
 cmb.sh
+watch.sh
 compile_commands.json
+.DS_Store
