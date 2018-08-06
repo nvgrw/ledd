@@ -10,7 +10,7 @@
 static void print_help(void) { fprintf(stderr, "ledd [-d]"); }
 
 void sigint_handler(int sig) {
-  printf("Got SIGINT\n");
+  ledd_shutdown();
   exit(0);
 }
 
@@ -25,6 +25,9 @@ int main(int argc, char **argv) {
       print_help();
   }
 
+  if (daemonize) {
+  }
+
   signal(SIGINT, sigint_handler);
 
   /* TODO: Implement daemonization logic */
@@ -35,6 +38,8 @@ int main(int argc, char **argv) {
 
     return EXIT_FAILURE;
   }
+
+  ledd_shutdown();
 
   return EXIT_SUCCESS;
 }
