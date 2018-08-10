@@ -1,11 +1,14 @@
 #include "ledd.h"
 
+#include <fcntl.h>
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/uio.h>
 #include <time.h>
+#include <unistd.h>
 
 #include "rpi_ws281x/ws2811.h"
 
@@ -41,8 +44,13 @@ static ws2811_t strip = {.freq = TARGET_FREQ,
                                  },
                          }};
 
+const static char *FIFO_NAME = "/tmp/ledd.sock";
+static int fifo_fd = -1;
+
 error_t ledd_run(void) {
   printf("ledd initializing\n");
+
+  // Init ledd
   ws2811_return_t ws_ret;
   if ((ws_ret = ws2811_init(&strip)) != WS2811_SUCCESS) {
     return (error_t){.code = ERROR_CODE_STRIP_INIT_FAIL,
@@ -50,10 +58,21 @@ error_t ledd_run(void) {
   }
   printf("ledd initialized\n");
 
+  // Init fifo
+  if (mkfifo(FIFO_NAME, 0200) != 0) {
+    return (error_t){.code = ERROR_CODE_MK_FIFO_FAIL,
+                     .message = "creating fifo failed"};
+  }
+
   int amount_read = 0;
   ledd_instr_t instr;
 
-  while ((amount_read = read(STDIN_FILENO, &instr, INSTR_SIZE)) > 0) {
+  if ((fifo_fd = open(FIFO_NAME, O_RDONLY)) == -1) {
+    return (error_t){.code = ERROR_CODE_OPEN_FIFO_FAIL,
+                     .message = "opening fifo failed"};
+  }
+
+  while ((amount_read = read(fifo_fd, &instr, INSTR_SIZE)) > 0) {
     if (amount_read != INSTR_SIZE) {
       fprintf(stderr, "malformed instruction\n");
       continue;
@@ -67,6 +86,8 @@ error_t ledd_run(void) {
 
 void ledd_shutdown(void) {
   printf("ledd shutting down\n");
+  close(fifo_fd);
+  unlink(FIFO_NAME);
   ws2811_fini(&strip);
   printf("ledd shut down\n");
 }

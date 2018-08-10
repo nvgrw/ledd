@@ -1,0 +1,11 @@
+[Unit]
+Description=LED Daemon
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/local/sbin/ledd
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
