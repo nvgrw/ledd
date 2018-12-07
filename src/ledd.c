@@ -1,12 +1,13 @@
 #include "ledd.h"
 
-#include <fcntl.h>
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <sys/uio.h>
+#include <string.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -15,6 +16,7 @@
 #include "config.h"
 #include "instruction.h"
 
+#define PORT_NO 7890
 static const size_t INSTR_SIZE = sizeof(ledd_instr_t);
 
 static void ledd_execute(const ledd_instr_t *instr);
@@ -44,9 +46,6 @@ static ws2811_t strip = {.freq = TARGET_FREQ,
                                  },
                          }};
 
-const static char *FIFO_NAME = "/tmp/ledd.sock";
-static int fifo_fd = -1;
-
 error_t ledd_run(void) {
   printf("ledd initializing\n");
 
@@ -58,36 +57,70 @@ error_t ledd_run(void) {
   }
   printf("ledd initialized\n");
 
-  // Init fifo
-  if (mkfifo(FIFO_NAME, 0200) != 0) {
-    return (error_t){.code = ERROR_CODE_MK_FIFO_FAIL,
-                     .message = "creating fifo failed"};
+  // Init socket
+  int sockfd = socket(AF_INET, SOCK_STREAM, 0);
+  if (sockfd < 0) {
+    return (error_t){.code = ERROR_CODE_SOCKET_FAIL,
+                     .message = "error creating socket"};
   }
 
-  int amount_read = 0;
-  ledd_instr_t instr;
+  struct sockaddr_in serv_addr;
+  memset(&serv_addr, '\0', sizeof(serv_addr));
+  serv_addr.sin_family = AF_INET;
+  serv_addr.sin_addr.s_addr = INADDR_ANY;
+  serv_addr.sin_port = htons(PORT_NO);
 
-  if ((fifo_fd = open(FIFO_NAME, O_RDONLY)) == -1) {
-    return (error_t){.code = ERROR_CODE_OPEN_FIFO_FAIL,
-                     .message = "opening fifo failed"};
+  int opt_val = 1;
+  setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &opt_val, sizeof(opt_val));
+
+  if (bind(sockfd, (struct sockaddr*) &serv_addr, sizeof(serv_addr)) < 0) {
+    return (error_t){.code = ERROR_CODE_BIND_FAIL,
+                     .message = "error binding to socket"};
   }
 
-  while ((amount_read = read(fifo_fd, &instr, INSTR_SIZE)) > 0) {
-    if (amount_read != INSTR_SIZE) {
-      fprintf(stderr, "malformed instruction\n");
-      continue;
+  if (listen(sockfd, 1) < 0) {
+    return (error_t){.code = ERROR_CODE_LISTEN_FAIL,
+                     .message = "error listening on socket"};
+  }
+
+  printf("ledd listening on port %d\n", PORT_NO);
+
+  while (true) {
+    struct sockaddr_in cli_addr;
+    socklen_t client_len = sizeof(cli_addr);
+    int clientfd = accept(sockfd, (struct sockaddr *) &cli_addr, &client_len);
+    printf("client connected %s\n", inet_ntoa(cli_addr.sin_addr));
+
+    if (clientfd < 0) {
+      fprintf(stderr, "Could not establish new connection\n");
+      break;
     }
 
-    ledd_execute(&instr);
+    while (true) {
+      ledd_instr_t instr;
+
+      int read = recv(clientfd, &instr, INSTR_SIZE, 0);
+      if (read == 0) { // We're done here
+        close(clientfd);
+        break;
+      }
+
+      if (read != INSTR_SIZE) {
+        fprintf(stderr, "malformed instruction\n");
+        break;
+      }
+
+      ledd_execute(&instr);
+    }
   }
+
+  close(sockfd);
 
   return (error_t){.code = ERROR_CODE_SUCCESS, .message = NULL};
 }
 
 void ledd_shutdown(void) {
   printf("ledd shutting down\n");
-  close(fifo_fd);
-  unlink(FIFO_NAME);
   ws2811_fini(&strip);
   printf("ledd shut down\n");
 }
