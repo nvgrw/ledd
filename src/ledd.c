@@ -46,6 +46,8 @@ static ws2811_t strip = {.freq = TARGET_FREQ,
                                  },
                          }};
 
+static int serverfd;
+
 error_t ledd_run(void) {
   printf("ledd initializing\n");
 
@@ -58,8 +60,8 @@ error_t ledd_run(void) {
   printf("ledd initialized\n");
 
   // Init socket
-  int sockfd = socket(AF_INET, SOCK_STREAM, 0);
-  if (sockfd < 0) {
+  serverfd = socket(AF_INET, SOCK_STREAM, 0);
+  if (serverfd < 0) {
     return (error_t){.code = ERROR_CODE_SOCKET_FAIL,
                      .message = "error creating socket"};
   }
@@ -71,14 +73,14 @@ error_t ledd_run(void) {
   serv_addr.sin_port = htons(PORT_NO);
 
   int opt_val = 1;
-  setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &opt_val, sizeof(opt_val));
+  setsockopt(serverfd, SOL_SOCKET, SO_REUSEADDR, &opt_val, sizeof(opt_val));
 
-  if (bind(sockfd, (struct sockaddr*) &serv_addr, sizeof(serv_addr)) < 0) {
+  if (bind(serverfd, (struct sockaddr*) &serv_addr, sizeof(serv_addr)) < 0) {
     return (error_t){.code = ERROR_CODE_BIND_FAIL,
                      .message = "error binding to socket"};
   }
 
-  if (listen(sockfd, 1) < 0) {
+  if (listen(serverfd, 1) < 0) {
     return (error_t){.code = ERROR_CODE_LISTEN_FAIL,
                      .message = "error listening on socket"};
   }
@@ -88,7 +90,7 @@ error_t ledd_run(void) {
   while (true) {
     struct sockaddr_in cli_addr;
     socklen_t client_len = sizeof(cli_addr);
-    int clientfd = accept(sockfd, (struct sockaddr *) &cli_addr, &client_len);
+    int clientfd = accept(serverfd, (struct sockaddr *) &cli_addr, &client_len);
     printf("client connected %s\n", inet_ntoa(cli_addr.sin_addr));
 
     if (clientfd < 0) {
@@ -114,13 +116,14 @@ error_t ledd_run(void) {
     }
   }
 
-  close(sockfd);
+  close(serverfd);
 
   return (error_t){.code = ERROR_CODE_SUCCESS, .message = NULL};
 }
 
 void ledd_shutdown(void) {
   printf("ledd shutting down\n");
+  close(serverfd);
   ws2811_fini(&strip);
   printf("ledd shut down\n");
 }
