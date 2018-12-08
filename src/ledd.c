@@ -17,14 +17,15 @@
 #include "instruction.h"
 
 #define PORT_NO 7890
-static const size_t INSTR_SIZE = sizeof(ledd_instr_t);
+#define MAX_PIXELS 300
 
-static void ledd_execute(const ledd_instr_t *instr);
+static void ledd_execute(opc_pixel8_t* pixels, int num_pixels);
 static inline void ledd_set(uint8_t led_num, ws2811_led_t color);
 
 /* 0xWWRRGGBB */
 static inline ws2811_led_t ledd_color(uint8_t red, uint8_t green, uint8_t blue,
                                       uint8_t white);
+static inline ws2811_led_t ledd_color_no_white(uint8_t red, uint8_t green, uint8_t blue);
 
 static ws2811_t strip = {.freq = TARGET_FREQ,
                          .dmanum = 10,
@@ -98,21 +99,31 @@ error_t ledd_run(void) {
       break;
     }
 
-    while (true) {
-      ledd_instr_t instr;
+    opc_pixel8_t pixelbuf[MAX_PIXELS];
 
-      int read = recv(clientfd, &instr, INSTR_SIZE, 0);
+    while (true) {
+      opc_header_t opc_header;
+
+      int read = recv(clientfd, &opc_header, sizeof(opc_header_t), 0);
       if (read == 0) { // We're done here
         close(clientfd);
         break;
       }
 
-      if (read != INSTR_SIZE) {
-        fprintf(stderr, "malformed instruction\n");
+      uint16_t payload_length = (opc_header.length_high << 8) | opc_header.length_low;
+      if (payload_length % 3 != 0) {
+        fprintf(stderr, "bad payload length %d\n", payload_length);
+        close(clientfd);
         break;
       }
 
-      ledd_execute(&instr);
+      read = recv(clientfd, pixelbuf, payload_length, 0);
+      if (read == 0) { // We're done here
+        close(clientfd);
+        break;
+      }
+
+      ledd_execute(pixelbuf, payload_length / 3);
     }
   }
 
@@ -128,25 +139,13 @@ void ledd_shutdown(void) {
   printf("ledd shut down\n");
 }
 
-static void ledd_execute(const ledd_instr_t *instr) {
-  /* If the pattern is to be held, don't do anything */
-  if (instr->flags & LEDD_INSTR_FLAG_HOLD) return;
-
-  /* Determine range */
-  uint8_t rng_fro = instr->range_from;
-  uint8_t rng_to = MIN(instr->range_to, WRAPAROUND);
-  if (rng_fro > rng_to) {
-    rng_fro = rng_to;
-  }
-
-  const ws2811_led_t color =
-      ledd_color(instr->red, instr->green, instr->blue, instr->white);
-  for (int i = rng_fro; i < rng_to; i++) {
+static void ledd_execute(opc_pixel8_t* pixels, int num_pixels) {
+  uint8_t max_range = MIN(num_pixels, WRAPAROUND);
+  for (int i = 0; i < max_range; i++) {
+    const opc_pixel8_t px = pixels[i];
+    const ws2811_led_t color = ledd_color_no_white(px.red, px.green, px.blue);
     ledd_set(i, color);
   }
-
-  /* Continue assembling the pattern */
-  if (instr->flags & LEDD_INSTR_FLAG_CONT) return;
 
   ws2811_return_t ws_ret;
   if ((ws_ret = ws2811_render(&strip)) != WS2811_SUCCESS) {
@@ -168,6 +167,16 @@ static inline void ledd_set(uint8_t led_num, ws2811_led_t color) {
   /* Validate counterpart and then either set both or only one */
   if (counterpart_num < NUM_LEDS)
     strip.channel[0].leds[counterpart_num] = color;
+}
+
+static inline ws2811_led_t ledd_color_no_white(uint8_t red, uint8_t green, uint8_t blue) {
+  // Find minimum color (white amount)
+  uint8_t white = MIN(MIN(red, green), blue);
+  red -= white;
+  green -= white;
+  blue -= white;
+
+  return ledd_color(red, green, blue, white);
 }
 
 static inline ws2811_led_t ledd_color(uint8_t red, uint8_t green, uint8_t blue,

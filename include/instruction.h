@@ -5,31 +5,24 @@
 #include <unistd.h>
 
 /**
- * The primary purpose of ledd is to spool LED commands.
- * As such, the command interface is quite primitive.
- *
- * Red: 8 bits
- * Grn: 8 bits
- * Blu: 8 bits
- * Wht: 8 bits
- * RnF: 8 bits
- * RnT: 8 bits
- * Ctr: [
- *        Hold: 1 bit
- *        Cont: 1 bit
- *      ]
+ * An implementation of http://openpixelcontrol.org
  */
 
-#define LEDD_INSTR_FLAG_HOLD 0x80
-#define LEDD_INSTR_FLAG_CONT 0x40
+typedef enum {
+  OPC_SET_8_BIT = 0,
+  OPC_SET_16_BIT = 2,
+  OPC_SYSTEM_EXCLUSIVE = 255
+} opc_cmd_t;
+
+typedef struct __attribute__((packed)) {
+  uint8_t channel;
+  opc_cmd_t command : 8;
+  uint8_t length_high;
+  uint8_t length_low;
+} opc_header_t;
 
 typedef struct __attribute__((packed)) {
   uint8_t red;
   uint8_t green;
   uint8_t blue;
-  uint8_t white;
-  uint8_t range_from;
-  uint8_t range_to;
-  // FLAGS = 0x40 CONT 0x80
-  uint8_t flags;
-} ledd_instr_t;
+} opc_pixel8_t;
