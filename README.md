@@ -1,18 +1,14 @@
 # ledd
 
-It's a work in progress.
+_ledd_ is a simple ws281x LED strip mapper and spooler compatible with [Open
+Pixel Control (OPC)](http://openpixelcontrol.org).
 
-Once completed, `ledd` will act a daemon that reads instructions from a pipe
-(currently stdin, which I'll probably redirect from the shell) and then executes
-them to change the colour of the connected LED strip.
+I developed this project for personal use and do not have time to polish it very
+much. Feel free to use it!
 
-This is primarily made for my own setup, so I've spent little time making it
-work for anything else.
-
-Together with `ledd`, I also intend to create `ledc`, which generates `ledd`
-intructions with correct sequencing. Currently I'm debating whether to have
-`ledd` read data at a rate independent from the input pipe or whether to tie it
-to the rate of the pipe. Pattern holding (NOOP) functionality is in place should
-I decide to process instructions at a constant rate.
-
-_All rights reserved_
+My current use-case is to control an RGBW LED strip connected to a Raspberry Pi
+using Apple Homekit. _ledd_ is a daemon bridging the communication between the
+[Homebridge OPC plugin](https://www.npmjs.com/package/homebridge-opc) and the
+LED strip itself. [Homebridge](https://homebridge.io) allows you to then set up
+different types of lights on the LED strip and control everything from an iOS
+device.
